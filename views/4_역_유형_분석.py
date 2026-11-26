@@ -6,10 +6,9 @@ from src.clustering import cluster_stations, elbow, station_ratio_vectors
 from src.config import COMPARE_STATIONS, HOURS, hour_label
 from src.ui import sidebar
 
-st.set_page_config(page_title="역 유형 분석", page_icon="🧭", layout="wide")
 df, station, year = sidebar()
 
-st.title("🧭 역 유형 분류 (K-means)")
+st.title("역 유형 분류 (K-means)")
 st.caption("역마다 이용객 규모가 달라서 '하루 중 몇 %가 그 시간대에 타고 내리는지' 비율로 비교합니다. (평일 기준)")
 
 X = station_ratio_vectors(df, "평일")

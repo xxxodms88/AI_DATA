@@ -12,6 +12,15 @@ streamlit run app.py
 브라우저에서 http://localhost:8501 이 열립니다.
 `data/processed/subway_clean.csv`가 없으면 **샘플(가짜) 데이터**로 실행됩니다. 실제 분석에 쓰면 안 됩니다.
 
+## 화면 구성과 디자인
+
+- **언제 탈까**(첫 화면): 역명판 → 혼잡 판정 한 문장 → 추천 → 05~24시 혼잡 막대. 휴대폰 우선.
+- **막차 놓쳤을 때**: 밤 화면(남색) + '막차 안내' 전광판 형태의 추천 경로.
+- **분석 근거**: 히트맵·피크·비교·역 유형 (발표용).
+- 디자인 기준: `docs/superpowers/specs/2026-11-26-ui-redesign-design.md`
+- 글꼴(서울남산체, Pretendard)은 `static/fonts/`에 내장되어 있어 인터넷 글꼴 서버 없이도 보입니다.
+- 받아야 하는 데이터·API 키 목록: `docs/DATA_AND_API.md`
+
 ## 실제 데이터 넣기 (팀원 1)
 
 1. 원본 CSV를 `data/raw/`에 넣습니다. (용량이 커서 git에는 올리지 않습니다.)
@@ -28,7 +37,9 @@ streamlit run app.py
 ## 폴더 구조와 담당
 
 ```
-app.py                   # 앱 시작 파일 (페이지 목록)
+app.py                   # 앱 시작 파일 (메뉴 목록)
+static/fonts/            # 내장 글꼴 (라이선스는 static/fonts/README.md)
+docs/                    # 데이터·API 목록, 디자인 문서
 views/                   # 각 화면 (app.py 목록에 등록)
   0_홈.py                # 오늘의 추천 (요일·학기 자동 판단 → 덜 붐비는 시간대)
   1_혼잡도_히트맵.py      # 요일 × 시간대 히트맵
@@ -48,7 +59,7 @@ src/
   night_route.py         # 택시비 최소 하차 위치 찾기
   bus.py                 # 심야버스 노선·배차 -> 시간표 변환
   sample_data.py         # 개발용 가짜 데이터
-  ui.py                  # 공통 사이드바
+  ui.py                  # 디자인 토큰, 역명판·혼잡 막대, 공통 사이드바
 tests/test_core.py       # python -m pytest -q
 ```
 

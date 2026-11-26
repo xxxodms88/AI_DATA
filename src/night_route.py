@@ -15,9 +15,9 @@ from src.taxi import fare_table, haversine_km, road_km, taxi_fare, transit_fare
 from src.transit import Network, fmt_time
 
 
-def _ride_info(net: Network, legs: list[dict]) -> tuple[float, list, str]:
-    """(이동 거리 km, 지도용 구간 목록 [(수단, 노선, [노드...])], 경로 설명)"""
-    km, segments, desc = 0.0, [], []
+def _ride_info(net: Network, legs: list[dict]) -> tuple[float, list, str, list]:
+    """(이동 거리 km, 지도용 구간 [(수단, 노선, [노드...])], 경로 설명, 구간별 시각 목록)"""
+    km, segments, desc, timed = 0.0, [], [], []
     for leg in legs:
         if leg["type"] != "탑승":
             continue
@@ -26,7 +26,12 @@ def _ride_info(net: Network, legs: list[dict]) -> tuple[float, list, str]:
             km += haversine_km(*net.coords[a], *net.coords[b])
         segments.append((leg["mode"], leg["line"], stops))
         desc.append(f"{leg['line']} {net.names[leg['from']]}→{net.names[leg['to']]}")
-    return km, segments, " / ".join(desc)
+        trip_times = net.trip_stops[leg["trip"]]
+        i = next(k for k, (n, t) in enumerate(trip_times) if n == leg["from"] and t >= leg["board_time"] - 1e-6)
+        alight = next(t for n, t in trip_times[i + 1:] if n == leg["to"])
+        timed.append({"line": leg["line"], "mode": leg["mode"], "from": net.names[leg["from"]],
+                      "to": net.names[leg["to"]], "board": fmt_time(leg["board_time"]), "alight": fmt_time(alight)})
+    return km, segments, " / ".join(desc), timed
 
 
 def plan(net: Network, origin: str, dest: tuple[float, float], depart: float,
@@ -46,7 +51,7 @@ def plan(net: Network, origin: str, dest: tuple[float, float], depart: float,
     for name, node in best.items():
         t = arr[node]
         legs = net.path_to(prev, node)
-        ride_km, segments, desc = _ride_info(net, legs)
+        ride_km, segments, desc, timed = _ride_info(net, legs)
         rides = [l for l in legs if l["type"] == "탑승"]
         used_bus = any(l["mode"] != "지하철" for l in rides)
         used_subway = any(l["mode"] == "지하철" for l in rides)
@@ -84,6 +89,7 @@ def plan(net: Network, origin: str, dest: tuple[float, float], depart: float,
             "_direct": not rides,
             "_node": node,
             "_segments": segments,
+            "_legs": timed,
         })
     df = pd.DataFrame(rows)
     if df.empty:

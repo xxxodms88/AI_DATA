@@ -1,2 +1,31 @@
+[server]
+enableStaticServing = true   # static/ 폴더의 글꼴을 앱에서 쓰기 위해
+
 [theme]
-primaryColor = "#7A5BA6"   # 7호선 계열 색
+base = "light"
+primaryColor = "#747F00"            # 7호선 올리브
+backgroundColor = "#ECEEEA"         # 승강장 회색
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2A44"               # 안내판 남색
+borderColor = "#D3D7CF"
+linkColor = "#5C6500"
+baseRadius = "6px"
+font = "Pretendard, sans-serif"
+headingFont = "SeoulNamsan, Pretendard, sans-serif"
+headingFontWeights = [400, 400, 400, 400, 400, 400]
+
+[[theme.fontFaces]]
+family = "Pretendard"
+url = "app/static/fonts/PretendardVariable-ks.woff2"
+weight = "100 900"
+
+[[theme.fontFaces]]
+family = "SeoulNamsan"
+url = "app/static/fonts/SeoulNamsanM-ks.woff2"
+weight = "400"
+
+[theme.sidebar]
+backgroundColor = "#E2E5DF"
+
+[client]
+toolbarMode = "minimal"   # 보는 사람에게 개발용 메뉴 숨기기

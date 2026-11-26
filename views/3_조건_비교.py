@@ -4,10 +4,9 @@ import streamlit as st
 from src.analysis import METRICS, compare_groups
 from src.ui import sidebar
 
-st.set_page_config(page_title="조건 비교", page_icon="⚖️", layout="wide")
 df, station, year = sidebar(show_year=False)  # 코로나 비교는 연도를 넘나들어서 전체 기간 사용
 
-st.title("⚖️ 조건별 비교 + 통계 검정")
+st.title("조건별 비교 + 통계 검정")
 COMPARISONS = {
     "학기 vs 방학": ("period", "학기", "방학", "평일"),
     "평일 vs 주말": ("day_type", "평일", "주말", None),
