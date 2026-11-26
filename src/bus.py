@@ -5,8 +5,9 @@
     bus_schedule.csv : route, first, last, headway_min              (기점 첫차·막차 시각, 배차간격)
 
 bus_routes.csv 만들기
-    서울 열린데이터광장 '서울시 버스노선별 정류장 정보' CSV를 받아서
-        python -m src.bus convert 받은파일.csv --routes N13 N16 N61
+    서울 열린데이터광장 '서울시 버스 노선 정보 조회'(OA-1095)의
+    '서울시버스노선별정류소정보(날짜).xlsx'(또는 예전 CSV)를 받아서
+        python -m src.bus convert 받은파일.xlsx --routes N13 N16 N61
     처럼 필요한 N버스 노선만 뽑는다. (좌표가 위경도(WGS84)인 파일이어야 함)
     bus_schedule.csv 는 첫 실행 때 기본값(23:30 / 03:50 / 30분)으로 틀을 만들어 주니,
     서울버스 앱·서울시 버스정보 사이트에서 노선별 첫차·막차·배차간격을 확인해 고쳐 넣는다.
@@ -99,7 +100,7 @@ def load_bus(allow_sample: bool) -> tuple[pd.DataFrame, pd.DataFrame, str] | Non
 _COLS = {
     "route": ["노선명", "ROUTE_NM", "노선번호", "노선"],
     "seq": ["순번", "SEQ", "STATION_ORD", "정류소순번", "정류장순번"],
-    "stop_id": ["ARS-ID", "ARS_ID", "ARSID", "정류소번호", "NODE_ID", "표준ID"],
+    "stop_id": ["ARS-ID", "ARS_ID", "정류소번호(ARS_ID)", "ARSID", "정류소번호", "NODE_ID", "표준ID"],
     "stop_name": ["정류소명", "정류장명", "STATION_NM", "NODE_NM", "역명"],
     "lon": ["X좌표", "GPS_X", "X", "경도"],
     "lat": ["Y좌표", "GPS_Y", "Y", "위도"],
@@ -109,7 +110,11 @@ _COLS = {
 def convert(src_csv: str, routes: list[str], out_dir: Path = TRANSIT_DIR) -> Path:
     from src.preprocess import read_csv_any_encoding
 
-    raw = read_csv_any_encoding(src_csv).rename(columns=lambda c: str(c).strip())
+    if str(src_csv).lower().endswith((".xlsx", ".xls")):  # 2025년 이후 파일은 엑셀로 배포됨
+        raw = pd.read_excel(src_csv)
+    else:
+        raw = read_csv_any_encoding(src_csv)
+    raw = raw.rename(columns=lambda c: str(c).strip())
     mapping = {}
     for key, cands in _COLS.items():
         found = next((c for c in cands if c in raw.columns), None)
@@ -139,7 +144,7 @@ def convert(src_csv: str, routes: list[str], out_dir: Path = TRANSIT_DIR) -> Pat
 def main():
     ap = argparse.ArgumentParser(description="심야버스 노선 데이터 변환")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("convert", help="서울시 버스노선별 정류장 정보 CSV -> bus_routes.csv")
+    c = sub.add_parser("convert", help="서울시버스노선별정류소정보 xlsx/csv -> bus_routes.csv")
     c.add_argument("csv")
     c.add_argument("--routes", nargs="+", required=True, help="예: N13 N16 N61")
     args = ap.parse_args()

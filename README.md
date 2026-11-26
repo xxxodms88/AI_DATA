@@ -69,13 +69,13 @@ tests/test_core.py       # python -m pytest -q
 |------|------|------|
 | `stations.csv` | line, station, seq, lat, lon | 서울교통공사 1~8호선 역사 좌표(위경도) 정보 (서울 열린데이터광장 OA-22534) |
 | `timetable.csv` | trip_id, line, station, time | 서울교통공사 역별 열차 운행 시각표에서 22시 이후 열차만 추출. time은 `HH:MM`, 자정 이후는 `00:10`이나 `24:10` 둘 다 가능 |
-| `bus_routes.csv` | route, seq, stop_id, stop_name, lat, lon | 서울 열린데이터광장 '서울시 버스노선별 정류장 정보'에서 변환 (아래 명령) |
+| `bus_routes.csv` | route, seq, stop_id, stop_name, lat, lon | 서울 열린데이터광장 '서울시 버스 노선 정보 조회'(OA-1095) xlsx에서 변환 (아래 명령) |
 | `bus_schedule.csv` | route, first, last, headway_min | N버스 노선별 첫차·막차·배차간격 (서울버스 앱·버스정보 사이트에서 확인해 입력) |
 
 심야버스 노선 변환:
 
 ```bash
-python -m src.bus convert 서울시버스노선별정류장정보.csv --routes N13 N16 N61
+python -m src.bus convert 서울시버스노선별정류소정보.xlsx --routes N13 N16 N61
 ```
 
 심야버스 파일이 없으면 지하철만 계산합니다(지하철도 샘플일 때만 가상의 'N샘플' 노선을 씁니다).

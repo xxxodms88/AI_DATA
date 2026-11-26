@@ -191,3 +191,12 @@ def test_convert_bus_csv(tmp_path):
     out = convert(str(src), ["N61"], tmp_path)
     df = pd.read_csv(out)
     assert list(df["stop_name"]) == ["가", "나"] and (tmp_path / "bus_schedule.csv").exists()
+
+
+def test_convert_bus_xlsx(tmp_path):
+    src = tmp_path / "raw.xlsx"
+    pd.DataFrame({"노선ID": [1, 1], "노선명": ["N61", "N61"], "순번": [1, 2], "NODE_ID": [10, 11],
+                  "ARS_ID": ["01001", "01002"], "정류소명": ["가", "나"],
+                  "X좌표": [126.9, 126.91], "Y좌표": [37.5, 37.51]}).to_excel(src, index=False)
+    out = convert(str(src), ["N61"], tmp_path)
+    assert list(pd.read_csv(out)["stop_name"]) == ["가", "나"]

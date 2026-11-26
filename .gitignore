@@ -8,3 +8,6 @@ data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+
+# API 키 (절대 커밋 금지)
+.streamlit/secrets.toml
