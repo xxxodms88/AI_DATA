@@ -11,39 +11,46 @@ import math
 import pandas as pd
 
 from src.config import TAXI_SPEED_KMH, TAXI_WAIT_MIN, WALK_KM, WALK_SPEED_KMH
-from src.taxi import fare_table, haversine_km, road_km, subway_fare, taxi_fare
+from src.taxi import fare_table, haversine_km, road_km, taxi_fare, transit_fare
 from src.transit import Network, fmt_time
 
 
-def _rail_km(net: Network, legs: list[dict]) -> tuple[float, list]:
-    km, points = 0.0, []
+def _ride_info(net: Network, legs: list[dict]) -> tuple[float, list, str]:
+    """(이동 거리 km, 지도용 구간 목록 [(수단, 노선, [노드...])], 경로 설명)"""
+    km, segments, desc = 0.0, [], []
     for leg in legs:
         if leg["type"] != "탑승":
             continue
-        stops = net.ride_stops(leg["trip"], leg["from"], leg["to"])
+        stops = net.ride_stops(leg["trip"], leg["from"], leg["to"], leg["board_time"])
         for a, b in zip(stops, stops[1:]):
             km += haversine_km(*net.coords[a], *net.coords[b])
-        points.extend(stops)
-    return km, points
+        segments.append((leg["mode"], leg["line"], stops))
+        desc.append(f"{leg['line']} {net.names[leg['from']]}→{net.names[leg['to']]}")
+    return km, segments, " / ".join(desc)
 
 
 def plan(net: Network, origin: str, dest: tuple[float, float], depart: float,
-         outside_seoul: bool = False) -> pd.DataFrame:
-    """후보 경로표 (총비용 오름차순). 첫 행이 추천 경로."""
+         outside_seoul: bool = False, time_value: float = 0.0) -> pd.DataFrame:
+    """후보 경로표. 첫 행이 추천 경로.
+
+    time_value: 1분을 몇 원으로 칠지. 0이면 순수하게 가장 싼 경로,
+                크게 할수록 조금 비싸도 빨리 도착하는 경로를 고른다.
+    """
     arr, prev = net.earliest_arrivals(origin, depart)
-    rows = []
-    seen = {}
+    best: dict = {}  # 같은 이름(환승역의 여러 호선)은 가장 빨리 도착한 노드만
     for node, t in arr.items():
-        if math.isinf(t):
-            continue
-        name = node[1]
-        if name in seen and seen[name] <= t:
-            continue
-        seen[name] = t
+        name = net.names[node]
+        if not math.isinf(t) and (name not in best or t < arr[best[name]]):
+            best[name] = node
+    rows = []
+    for name, node in best.items():
+        t = arr[node]
         legs = net.path_to(prev, node)
-        rail_km, points = _rail_km(net, legs)
+        ride_km, segments, desc = _ride_info(net, legs)
         rides = [l for l in legs if l["type"] == "탑승"]
-        if name != origin and not rides:  # 환승만 하고 이동 안 한 경우
+        used_bus = any(l["mode"] != "지하철" for l in rides)
+        used_subway = any(l["mode"] == "지하철" for l in rides)
+        if name != origin and not rides:  # 걷기만 하고 차를 안 탄 경우
             continue
 
         last_km = road_km(*net.coords[node], *dest)
@@ -56,28 +63,32 @@ def plan(net: Network, origin: str, dest: tuple[float, float], depart: float,
             fare_t = taxi_fare(last_km, board, outside_seoul)
             end = board + last_km / TAXI_SPEED_KMH * 60
             surcharge = fare_table(board)[2]
-        fare_s = subway_fare(rail_km)
+        fare_s = transit_fare(ride_km, used_subway, used_bus)
         rows.append({
-            "하차역": name if rides else f"{name} (바로 택시)",
-            "지하철 탑승": fmt_time(rides[0]["board_time"]) if rides else "-",
+            "하차 위치": name if rides else f"{name} (바로 택시)",
+            "경로": desc or "-",
+            "첫 탑승": fmt_time(rides[0]["board_time"]) if rides else "-",
             "하차 시각": fmt_time(t) if rides else "-",
-            "지하철 거리(km)": round(rail_km, 1),
-            "지하철 요금": fare_s,
+            "대중교통 거리(km)": round(ride_km, 1),
+            "대중교통 요금": fare_s,
+            "심야버스": "O" if used_bus else "",
             "마지막 이동": mode,
             "택시 거리(km)": round(last_km, 1) if mode == "택시" else 0.0,
             "할증": surcharge,
             "택시 요금": fare_t,
             "총 요금": fare_s + fare_t,
             "도착 예상": fmt_time(end),
+            "소요(분)": int(round(end - depart)),
             "_end": end,
+            "_score": fare_s + fare_t + time_value * (end - depart),
             "_direct": not rides,
             "_node": node,
-            "_points": points,
+            "_segments": segments,
         })
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    return df.sort_values(["총 요금", "_end"]).reset_index(drop=True)
+    return df.sort_values(["_score", "총 요금", "_end"]).reset_index(drop=True)
 
 
 def summary(df: pd.DataFrame) -> dict:

@@ -54,3 +54,23 @@ def subway_fare(rail_km: float) -> int:
         fare += math.ceil(seg / step) * add
         prev = upper
     return fare
+
+
+def transit_fare(km: float, used_subway: bool, used_bus: bool) -> int:
+    """대중교통 요금 (교통카드, 통합환승 단순화).
+
+    - 버스만: 심야버스 기본요금
+    - 지하철만: 지하철 거리비례 요금
+    - 둘 다: 더 비싼 기본요금(심야버스) + 10km 초과 거리 추가요금
+    실제 통합환승 요금 규칙은 더 복잡하니 '추정치'로 표시한다.
+    """
+    from src.config import NIGHT_BUS_FARE
+
+    if not used_subway and not used_bus:
+        return 0
+    if used_bus and not used_subway:
+        return NIGHT_BUS_FARE
+    fare = subway_fare(km)
+    if used_bus:
+        fare += NIGHT_BUS_FARE - SUBWAY_BASE_FARE
+    return fare

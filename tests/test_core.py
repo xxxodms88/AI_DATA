@@ -114,7 +114,7 @@ def test_plan_prefers_subway_then_taxi():
     dest = (37.60, 127.00)                                         # C보다 더 북쪽
     df = plan(net, "A", dest, parse_time("24:05"))
     s = summary(df)
-    assert s["best"]["하차역"] == "B" and s["saving"] > 0
+    assert s["best"]["하차 위치"] == "B" and s["saving"] > 0
 
 
 def test_sample_network_runs():
@@ -122,3 +122,72 @@ def test_sample_network_runs():
     net = Network(stations, tt)
     df = plan(net, "숭실대입구", net.coords[("7호선", "노원")], parse_time("00:20"))
     assert not df.empty and df.iloc[0]["총 요금"] <= df[df["_direct"]]["총 요금"].min()
+
+
+# ---------------- 심야버스 ----------------
+from src.bus import build_timetable, convert, sample_bus  # noqa: E402
+from src.taxi import transit_fare  # noqa: E402
+
+
+def test_bus_timetable_from_headway():
+    routes = pd.DataFrame([("N1", 0, "100", "가", 37.50, 127.0), ("N1", 1, "101", "나", 37.51, 127.0)],
+                          columns=["route", "seq", "stop_id", "stop_name", "lat", "lon"])
+    sch = pd.DataFrame([{"route": "N1", "first": "23:30", "last": "00:30", "headway_min": 30}])
+    st, tt = build_timetable(routes, sch)
+    assert tt["trip_id"].nunique() == 3                      # 23:30, 24:00, 24:30
+    assert set(st["name"]) == {"가", "나"} and (st["mode"] == "심야버스").all()
+
+
+def test_subway_then_walk_to_night_bus():
+    """지하철로 B까지 간 뒤 근처 정류장(80m)까지 걸어가 심야버스로 갈아타는 경로를 찾는다."""
+    sub_st = pd.DataFrame([("1호선", "A", 0, 37.50, 127.00), ("1호선", "B", 1, 37.52, 127.00)],
+                          columns=["line", "station", "seq", "lat", "lon"])
+    sub_st["name"], sub_st["mode"] = sub_st["station"], "지하철"
+    sub_tt = pd.DataFrame([("t1", "1호선", "A", "24:00"), ("t1", "1호선", "B", "24:05")],
+                          columns=["trip_id", "line", "station", "time"])
+    routes = pd.DataFrame([("N9", 0, "900", "B정류장", 37.5207, 127.0), ("N9", 1, "901", "먼곳", 37.62, 127.0)],
+                          columns=["route", "seq", "stop_id", "stop_name", "lat", "lon"])
+    bus_st, bus_tt = build_timetable(routes, pd.DataFrame(
+        [{"route": "N9", "first": "24:10", "last": "24:10", "headway_min": 30}]))
+    tt = pd.concat([sub_tt.assign(time=sub_tt["time"].map(parse_time)), bus_tt], ignore_index=True)
+    net = Network(pd.concat([sub_st, bus_st], ignore_index=True), tt)
+
+    arr, prev = net.earliest_arrivals("A", parse_time("23:55"))
+    far = ("N9", "901")
+    assert arr[far] < float("inf")
+    legs = net.path_to(prev, far)
+    assert [l["type"] for l in legs] == ["탑승", "환승", "탑승"]
+    df = plan(net, "A", (37.625, 127.0), parse_time("23:55"))
+    best = df.iloc[0]
+    assert best["하차 위치"] == "먼곳" and best["심야버스"] == "O"
+    assert best["대중교통 요금"] == transit_fare(best["대중교통 거리(km)"], True, True)
+
+
+def test_transit_fare_combos():
+    assert transit_fare(5, False, True) == 2500
+    assert transit_fare(5, True, False) == 1550
+    assert transit_fare(12, True, True) == 2600
+
+
+def test_time_value_prefers_faster():
+    stations, tt, _ = load_transit()
+    net = Network(stations, tt)
+    dest = net.coords[("7호선", "노원")]
+    cheap = plan(net, "숭실대입구", dest, parse_time("00:20"), time_value=0).iloc[0]
+    fast = plan(net, "숭실대입구", dest, parse_time("00:20"), time_value=500).iloc[0]
+    assert cheap["총 요금"] <= fast["총 요금"] and fast["소요(분)"] <= cheap["소요(분)"]
+
+
+def test_sample_bus_loop_is_consistent():
+    st, tt = sample_bus()
+    assert tt.groupby("trip_id")["time"].apply(lambda s: s.is_monotonic_increasing).all()
+
+
+def test_convert_bus_csv(tmp_path):
+    src = tmp_path / "raw.csv"
+    pd.DataFrame({"노선명": ["N61", "N61", "100"], "순번": [1, 2, 1], "ARS-ID": ["1", "2", "3"],
+                  "정류소명": ["가", "나", "다"], "X좌표": [126.9, 126.91, 127.0], "Y좌표": [37.5, 37.51, 37.6]}
+                 ).to_csv(src, index=False, encoding="cp949")
+    out = convert(str(src), ["N61"], tmp_path)
+    df = pd.read_csv(out)
+    assert list(df["stop_name"]) == ["가", "나"] and (tmp_path / "bus_schedule.csv").exists()

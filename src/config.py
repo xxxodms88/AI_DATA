@@ -72,3 +72,4 @@ SUBWAY_EXTRA = [(50, 5, 100), (float("inf"), 8, 100)]  # (구간 상한 km, 몇 
 TRANSFER_MIN = 5                     # 같은 역 다른 호선 환승 시간
 WALK_KM = 0.8                        # 이 거리 이하면 택시 대신 걷기
 WALK_SPEED_KMH = 4.5
+NIGHT_BUS_FARE = 2500                # 서울 심야버스(N버스) 교통카드 성인 - 재확인 필요

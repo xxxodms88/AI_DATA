@@ -8,6 +8,8 @@
         - trip_id = 열차번호(+방향), time = 'HH:MM' (자정 넘으면 '24:10' 또는 '00:10' 둘 다 가능)
         - 막차가 중간역에서 끝나는(행선지가 짧은) 열차도 시각표에 그대로 들어가 있어야 한다.
 
+심야버스는 src/bus.py 참고 (같은 시간표 형식으로 바꿔서 함께 탐색한다).
+
 파일이 없으면 7호선(도봉산~가산디지털단지) 샘플로 동작한다.
   - 샘플 좌표: 공개 gist(jhj0517/korean-subway-station-list) 기반 근사값
   - 샘플 시간표: 가짜! (막차 시각·행선지를 그럴듯하게 만든 값)
@@ -20,12 +22,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.config import TRANSFER_MIN
+from src.config import TRANSFER_MIN, WALK_SPEED_KMH
 from src.taxi import haversine_km
 
 TRANSIT_DIR = Path(__file__).resolve().parent.parent / "data" / "transit"
 DAY_START_MIN = 4 * 60  # 04시 이전 시각은 '전날 밤의 연장'으로 본다
 CHANGE_MIN = 2          # 같은 역에서 다른 열차로 갈아탈 때 필요한 시간
+WALK_TRANSFER_KM = 0.4  # 이 거리 이내 정류장·역은 걸어서 환승 가능
+WALK_DETOUR = 1.2       # 걷는 길 우회 계수
 
 _LINE7 = [
     ("도봉산", 37.6893, 127.0462), ("수락산", 37.6778, 127.0554), ("마들", 37.6653, 127.0576),
@@ -99,70 +103,132 @@ def sample_timetable() -> pd.DataFrame:
 
 
 # ------------------------------------------------------------------ 데이터 로드
-def load_transit() -> tuple[pd.DataFrame, pd.DataFrame, bool]:
-    """(stations, timetable, 샘플 여부)"""
+def load_transit(include_bus: bool = True) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """(stations, timetable, 상태) - 상태: {'subway_sample': bool, 'bus': '실제'|'샘플'|'없음'}
+
+    stations 컬럼: line, station(노드 ID), name(화면 표시 이름), lat, lon
+    지하철은 station = name = 역명, 버스는 station = 정류소 ID(ARS), name = 정류소명
+    """
     sp, tp = TRANSIT_DIR / "stations.csv", TRANSIT_DIR / "timetable.csv"
     if sp.exists() and tp.exists():
-        stations = pd.read_csv(sp)
-        tt = pd.read_csv(tp)
-        tt["time"] = tt["time"].map(parse_time)
-        return stations, tt, False
-    tt = sample_timetable()
+        stations, tt, subway_sample = pd.read_csv(sp), pd.read_csv(tp), False
+    else:
+        stations, tt, subway_sample = sample_stations(), sample_timetable(), True
     tt["time"] = tt["time"].map(parse_time)
-    return sample_stations(), tt, True
+    if "name" not in stations:
+        stations["name"] = stations["station"]
+    stations["mode"] = "지하철"
+
+    bus_state = "없음"
+    if include_bus:
+        from src.bus import load_bus
+
+        bus = load_bus(allow_sample=subway_sample)
+        if bus is not None:
+            bus_st, bus_tt, bus_state = bus
+            stations = pd.concat([stations, bus_st], ignore_index=True)
+            tt = pd.concat([tt, bus_tt], ignore_index=True)
+    stations["station"] = stations["station"].astype(str)
+    tt["station"] = tt["station"].astype(str)
+    return stations, tt, {"subway_sample": subway_sample, "bus": bus_state}
 
 
 # ------------------------------------------------------------------ 탐색
+def _walk_min(km: float) -> float:
+    return km * WALK_DETOUR / WALK_SPEED_KMH * 60 + 1  # +1분: 출구·횡단보도
+
+
 @dataclass
 class Network:
     stations: pd.DataFrame
     timetable: pd.DataFrame
     coords: dict = field(init=False)
+    names: dict = field(init=False)
+    modes: dict = field(init=False)
     connections: list = field(init=False)
     transfers: dict = field(init=False)
+    trip_stops: dict = field(init=False)
 
     def __post_init__(self):
-        self.coords = {(r.line, r.station): (r.lat, r.lon) for r in self.stations.itertuples()}
-        conns = []
-        for trip, g in self.timetable.sort_values("time").groupby("trip_id", sort=False):
-            g = g.sort_values("time")
+        st = self.stations.copy()
+        if "name" not in st:
+            st["name"] = st["station"]
+        if "mode" not in st:
+            st["mode"] = "지하철"
+        st["station"] = st["station"].astype(str)
+        self.coords = {(r.line, r.station): (r.lat, r.lon) for r in st.itertuples()}
+        self.names = {(r.line, r.station): r.name for r in st.itertuples()}
+        self.modes = {(r.line, r.station): r.mode for r in st.itertuples()}
+
+        tt = self.timetable.copy()
+        tt["station"] = tt["station"].astype(str)
+        conns, self.trip_stops = [], {}
+        for trip, g in tt.sort_values("time").groupby("trip_id", sort=False):
+            g = g.sort_values("time", kind="stable")
             nodes = list(zip(g["line"], g["station"]))
             times = list(g["time"])
+            self.trip_stops[trip] = list(zip(nodes, times))
             for i in range(len(nodes) - 1):
                 conns.append((times[i], times[i + 1], nodes[i], nodes[i + 1], trip))
         self.connections = sorted(conns, key=lambda c: (c[0], c[1]))
-        by_name: dict[str, list] = {}
-        for node in self.coords:
-            by_name.setdefault(node[1], []).append(node)
-        self.transfers = {n: [o for o in by_name[n[1]] if o != n] for n in self.coords}
+        self.transfers = self._build_transfers()
 
-    def nodes_of(self, station: str):
-        return [n for n in self.coords if n[1] == station]
+    def _build_transfers(self) -> dict:
+        """환승(걷기) 연결: 같은 이름 = TRANSFER_MIN, 그 밖에 WALK_TRANSFER_KM 이내 노드끼리 걷기."""
+        out: dict = {n: {} for n in self.coords}
+        by_name: dict = {}
+        for n, name in self.names.items():
+            by_name.setdefault(name, []).append(n)
+        for group in by_name.values():
+            for a in group:
+                for b in group:
+                    if a != b:
+                        out[a][b] = TRANSFER_MIN
+        # 가까운 노드끼리 (격자로 나눠서 주변 칸만 비교)
+        cell = 0.005  # 약 500m
+        grid: dict = {}
+        for n, (la, lo) in self.coords.items():
+            grid.setdefault((int(la / cell), int(lo / cell)), []).append(n)
+        for (gx, gy), nodes in grid.items():
+            near = [m for dx in (-1, 0, 1) for dy in (-1, 0, 1) for m in grid.get((gx + dx, gy + dy), [])]
+            for a in nodes:
+                for b in near:
+                    if a == b or a[0] == b[0]:
+                        continue
+                    km = haversine_km(*self.coords[a], *self.coords[b])
+                    if km <= WALK_TRANSFER_KM:
+                        t = max(_walk_min(km), 2.0)
+                        out[a][b] = min(out[a].get(b, math.inf), t)
+        return out
+
+    def nodes_of(self, name: str):
+        return [n for n, nm in self.names.items() if nm == name]
 
     def earliest_arrivals(self, origin: str, depart: float) -> tuple[dict, dict]:
-        """출발역·출발시각에서 각 (호선, 역)에 가장 빨리 도착하는 시각과 경로 정보.
+        """출발지(표시 이름)·출발시각에서 각 노드에 가장 빨리 도착하는 시각과 경로 정보.
 
-        Connection Scan Algorithm: 시간순으로 정렬한 '역 A -> 역 B 구간 운행' 목록을 한 번 훑는다.
+        Connection Scan Algorithm: 시간순으로 정렬한 'A -> B 구간 운행'(지하철·버스) 목록을 한 번 훑는다.
         막차가 끊긴 구간은 시간표에 운행이 없으므로 자연스럽게 도달할 수 없게 된다.
         """
         arr = {n: math.inf for n in self.coords}
         prev: dict = {}
+        rides = {n: 0 for n in arr}  # 그 노드까지 탄 차량 수 (적을수록 좋음)
         for n in self.nodes_of(origin):
             arr[n] = depart
             prev[n] = None
-        for n in self.nodes_of(origin):  # 출발역에서 다른 호선으로 환승
-            for o in self.transfers[n]:
-                arr[o] = min(arr[o], depart + TRANSFER_MIN)
-                prev.setdefault(o, ("transfer", n))
+        for n in self.nodes_of(origin):  # 출발지에서 걸어서 갈 수 있는 다른 호선·정류장
+            for o, w in self.transfers[n].items():
+                if depart + w < arr[o]:
+                    arr[o] = depart + w
+                    prev[o] = ("transfer", n)
 
-        rides = {n: 0 for n in arr}  # 그 노드까지 탄 열차 수 (적을수록 좋음)
-        trip_board: dict = {}  # trip -> (탑승 역, 탑승 시각, 그때까지 탄 열차 수)
+        trip_board: dict = {}  # trip -> (탑승 노드, 탑승 시각, 그때까지 탄 차량 수)
         for dep, art, a, b, trip in self.connections:
             if dep < depart:
                 continue
             ra = arr.get(a, math.inf)
             if ra < math.inf:
-                # 다른 열차에서 내려 갈아타면 승강장 이동 시간이 필요하다
+                # 다른 차에서 내려 같은 자리에서 갈아타도 이동 시간이 필요하다
                 need = ra + (CHANGE_MIN if prev.get(a) and prev[a][0] == "ride" else 0)
                 if need <= dep and (trip not in trip_board or rides[a] < trip_board[trip][2]):
                     trip_board[trip] = (a, dep, rides[a])
@@ -171,9 +237,9 @@ class Network:
                 board_node, board_time, n_rides = trip_board[trip]
                 prev[b] = ("ride", trip, board_node, board_time)
                 rides[b] = n_rides + 1
-                for o in self.transfers.get(b, []):
-                    if art + TRANSFER_MIN < arr[o]:
-                        arr[o] = art + TRANSFER_MIN
+                for o, w in self.transfers.get(b, {}).items():
+                    if art + w < arr[o]:
+                        arr[o] = art + w
                         prev[o] = ("transfer", b)
                         rides[o] = rides[b]
         return arr, prev
@@ -189,13 +255,15 @@ class Network:
             else:
                 _, trip, board_node, board_time = p
                 legs.append({"type": "탑승", "trip": trip, "from": board_node, "to": node,
-                             "board_time": board_time})
+                             "board_time": board_time, "mode": self.modes.get(board_node, "지하철"),
+                             "line": board_node[0]})
                 node = board_node
         return legs[::-1]
 
-    def ride_stops(self, trip: str, a, b) -> list:
-        """열차 trip이 a에서 b까지 지나는 역 노드 목록 (지도·거리 계산용)."""
-        g = self.timetable[self.timetable["trip_id"] == trip].sort_values("time")
-        nodes = list(zip(g["line"], g["station"]))
-        i, j = nodes.index(a), nodes.index(b)
-        return nodes[i:j + 1]
+    def ride_stops(self, trip: str, a, b, board_time: float | None = None) -> list:
+        """차량 trip이 a에서 b까지 지나는 노드 목록 (지도·거리 계산용). 순환 노선도 처리."""
+        stops = self.trip_stops[trip]
+        i = next(k for k, (n, t) in enumerate(stops)
+                 if n == a and (board_time is None or t >= board_time - 1e-6))
+        j = next(k for k in range(i + 1, len(stops)) if stops[k][0] == b)
+        return [n for n, _ in stops[i:j + 1]]
