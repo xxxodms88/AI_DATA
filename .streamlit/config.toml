@@ -1,0 +1,36 @@
+[server]
+enableStaticServing = true   # static/ 폴더의 글꼴을 앱에서 쓰기 위해
+
+[theme]
+base = "light"
+primaryColor = "#747F00"            # 7호선 올리브
+backgroundColor = "#ECEEEA"         # 승강장 회색
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2A44"               # 안내판 남색
+borderColor = "#D6D9D2"
+linkColor = "#5C6500"
+baseRadius = "8px"
+font = "Paperlogy, sans-serif"
+headingFont = "Paperlogy, sans-serif"
+headingFontWeights = [600, 600, 600, 500, 500, 500]
+
+[[theme.fontFaces]]
+family = "Paperlogy"
+url = "app/static/fonts/Paperlogy-400-ks.woff2"
+weight = "400"
+
+[[theme.fontFaces]]
+family = "Paperlogy"
+url = "app/static/fonts/Paperlogy-500-ks.woff2"
+weight = "500"
+
+[[theme.fontFaces]]
+family = "Paperlogy"
+url = "app/static/fonts/Paperlogy-600-ks.woff2"
+weight = "600"
+
+[theme.sidebar]
+backgroundColor = "#E2E5DF"
+
+[client]
+toolbarMode = "minimal"   # 보는 사람에게 개발용 메뉴 숨기기

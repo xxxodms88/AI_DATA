@@ -1,0 +1,126 @@
+# 🚇 숭실대입구역 혼잡 패턴 분석 앱
+
+서울교통공사 공공데이터로 숭실대입구역(7호선)의 시간대·요일·학기별 승하차 패턴을 분석하고, **덜 붐비는 등하교 시간대**를 추천하는 Streamlit 앱입니다.
+
+## 실행 방법
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+브라우저에서 http://localhost:8501 이 열립니다.
+`data/processed/subway_clean.csv`가 없으면 **샘플(가짜) 데이터**로 실행됩니다. 실제 분석에 쓰면 안 됩니다.
+
+## 화면 구성과 디자인
+
+- **언제 탈까**(첫 화면): 역명판 → 혼잡 판정 한 문장 → 추천 → 05~24시 혼잡 막대. 휴대폰 우선.
+- **막차 놓쳤을 때**: 밤 화면(남색) + '막차 안내' 전광판 형태의 추천 경로.
+- **분석 근거**: 히트맵·피크·비교·역 유형 (발표용).
+- **디자인 규칙: `DESIGN.md`** (화면을 고치기 전에 읽기, PR 전 체크리스트 포함)
+- 처음 디자인을 정한 기록: `docs/superpowers/specs/2026-11-26-ui-redesign-design.md`
+- 글꼴(Paperlogy 페이퍼로지, SIL OFL 1.1)은 `static/fonts/`에 내장되어 있어 인터넷 글꼴 서버 없이도 보입니다.
+- 받아야 하는 데이터·API 키 목록: `docs/DATA_AND_API.md`
+
+## Claude Code에서 브라우저 쓰기 (Playwright MCP)
+
+저장소의 `.mcp.json`에 Playwright MCP가 설정되어 있어서, Claude Code가 앱을 브라우저로 열어 보고 화면을 점검할 수 있습니다.
+실행은 `scripts/playwright-mcp.mjs`가 맡고, `@playwright/mcp` 버전을 0.0.86으로 고정해 팀원 모두 같은 버전을 씁니다.
+
+- 처음 열 때 Claude Code가 이 서버를 써도 되는지 묻습니다. 허용하면 됩니다.
+- 클라우드 세션: 미리 설치된 Chromium(`/opt/pw-browsers/chromium`)을 그대로 씁니다.
+- 내 컴퓨터: Node.js가 필요하고, 처음 한 번 브라우저를 설치합니다.
+  ```bash
+  npx playwright install chromium
+  ```
+- 창을 띄워서 보고 싶으면 `PLAYWRIGHT_MCP_HEADED=1`을 설정하고 Claude Code를 실행합니다.
+
+## 실제 데이터 넣기 (팀원 1)
+
+1. 원본 CSV를 `data/raw/`에 넣습니다. (용량이 커서 git에는 올리지 않습니다.)
+   - 서울교통공사 **역별 일별 시간대별 승하차인원** (1~8호선, 2008~2021)
+   - 서울 열린데이터광장 **지하철 호선별 역별 시간대별 승하차 인원** (월 단위)
+2. 전처리 실행:
+   ```bash
+   python -m src.preprocess data/raw --out data/processed/subway_clean.csv
+   ```
+   인코딩(cp949/utf-8), 컬럼명, 역명(`숭실대입구(살피재)` → `숭실대입구`), 호선 표기를 자동으로 통일합니다.
+   기본으로 `src/config.py`의 비교 대상 역만 저장합니다. 전체 역은 `--all-stations`.
+3. 앱을 다시 실행하면 사이드바에 "실제 데이터 사용 중"이 표시됩니다.
+
+## 폴더 구조와 담당
+
+```
+app.py                   # 앱 시작 파일 (메뉴 목록)
+static/fonts/            # 내장 글꼴 (라이선스는 static/fonts/README.md)
+docs/                    # 데이터·API 목록, 디자인 문서
+views/                   # 각 화면 (app.py 목록에 등록)
+  0_홈.py                # 오늘의 추천 (요일·학기 자동 판단 → 덜 붐비는 시간대)
+  1_혼잡도_히트맵.py      # 요일 × 시간대 히트맵
+  2_시간대_피크.py        # 시간대별 승하차 그래프 + 피크 탐지
+  3_조건_비교.py          # 학기/방학 · 평일/주말 · 코로나 전후 + t-검정
+  4_역_유형_분석.py       # K-means 역 유형 분류 + 엘보우
+  5_막차_택시비.py        # 막차 끊겼을 때 지하철+택시 최저 요금 경로
+src/
+  config.py              # 대상 역, 학사일정, 코로나 기준 연도  ← 먼저 확인!
+  preprocess.py          # [팀원 1] 수집·병합·정제
+  data_loader.py         # 정제 데이터 로드 + 요일/학기/코로나 변수 생성
+  analysis.py            # [팀원 2] 피크 탐지, 조건 비교, 통계 검정
+  clustering.py          # [팀원 3] 비율 벡터, 엘보우, K-means
+  recommend.py           # [팀원 4] 상대 혼잡도, 추천 로직
+  taxi.py                # 택시·지하철 요금 계산
+  transit.py             # 노선·심야 시간표 + 막차 반영 경로 탐색
+  night_route.py         # 택시비 최소 하차 위치 찾기
+  bus.py                 # 심야버스 노선·배차 -> 시간표 변환
+  sample_data.py         # 개발용 가짜 데이터
+  ui.py                  # 디자인 토큰, 역명판·혼잡 막대, 공통 사이드바
+tests/test_core.py       # python -m pytest -q
+```
+
+## 막차 택시비 절약 기능
+
+막차가 끊겼거나 곧 끊길 때, 지하철·심야버스로 갈 수 있는 모든 역·정류장을 후보로 두고
+`대중교통 요금 + 거기서 목적지까지 택시 요금`이 가장 싼 곳을 찾습니다.
+'시간 가치(원/분)'를 올리면 조금 비싸도 빨리 도착하는 경로를 추천합니다.
+
+- 탐색: Connection Scan 알고리즘. 시간표에 남은 열차만 쓰니까 중간역에서 끝나는 막차, 이미 끊긴 환승 열차가 자동으로 반영됩니다.
+- 택시 요금: 서울 중형택시 요금표 (심야 22~23시·02~04시 20%, 23~02시 40%, 시계외 20%). `src/config.py`에서 수정.
+- 거리: 직선거리 × 1.3 추정.
+- 심야버스: 첫차·막차·배차간격으로 운행 시각을 만들어 지하철과 같이 탐색합니다. 400m 이내 역·정류장은 걸어서 환승.
+
+실제 데이터는 `data/transit/`에 두 파일을 넣으면 됩니다. 없으면 7호선(도봉산~가산디지털단지) 샘플과 **가짜 시간표**로 동작합니다.
+
+| 파일 | 컬럼 | 출처 |
+|------|------|------|
+| `stations.csv` | line, station, seq, lat, lon | 서울교통공사 1~8호선 역사 좌표(위경도) 정보 (서울 열린데이터광장 OA-22534) |
+| `timetable.csv` | trip_id, line, station, time | 서울교통공사 역별 열차 운행 시각표에서 22시 이후 열차만 추출. time은 `HH:MM`, 자정 이후는 `00:10`이나 `24:10` 둘 다 가능 |
+| `bus_routes.csv` | route, seq, stop_id, stop_name, lat, lon | 서울 열린데이터광장 '서울시 버스 노선 정보 조회'(OA-1095) xlsx에서 변환 (아래 명령) |
+| `bus_schedule.csv` | route, first, last, headway_min | N버스 노선별 첫차·막차·배차간격 (서울버스 앱·버스정보 사이트에서 확인해 입력) |
+
+심야버스 노선 변환:
+
+```bash
+python -m src.bus convert 서울시버스노선별정류소정보.xlsx --routes N13 N16 N61
+```
+
+심야버스 파일이 없으면 지하철만 계산합니다(지하철도 샘플일 때만 가상의 'N샘플' 노선을 씁니다).
+
+## 팀에서 꼭 고쳐야 할 것
+
+- [ ] `src/config.py`의 `SEMESTERS`: 지금은 **예시 날짜**입니다. 숭실대 학사일정으로 바꿔 주세요.
+- [ ] `src/config.py`의 `COMPARE_STATIONS`: 비교 대상 역 목록과 예상 유형을 확정해 주세요.
+- [ ] 실제 CSV를 받으면 `preprocess.py`가 컬럼을 잘 인식하는지 확인해 주세요. (못 읽은 파일은 `SKIP`으로 표시됩니다.)
+- [ ] 숭실대입구역 근처를 지나는 실제 N버스 노선을 골라 `bus_routes.csv`, `bus_schedule.csv`를 만들어 주세요.
+- [ ] 택시·지하철·심야버스 요금(`src/config.py`)이 최신인지 확인해 주세요. 택시 기본요금 인상 논의가 있습니다.
+- [ ] `clustering.name_cluster()`의 자동 유형 이름 규칙이 실제 데이터에서도 상식적인지 검토해 주세요.
+
+## 배포 (Streamlit Community Cloud)
+
+1. 이 저장소를 GitHub에 push합니다.
+2. https://share.streamlit.io 에서 저장소를 선택하고 Main file에 `app.py`를 지정합니다.
+3. 실제 데이터로 배포하려면 정제된 `subway_clean.csv`(비교 대상 역만, 용량 작음)를 `.gitignore` 예외로 커밋하세요.
+
+## 한계
+
+- 승하차 인원은 **역 혼잡도**이며 열차 칸 내부 혼잡도와는 다를 수 있습니다.
+- 시간대별 일 단위 데이터는 2021년까지가 중심입니다. 앱에 데이터 기간이 표시됩니다.
