@@ -9,49 +9,54 @@ import streamlit as st
 from src.config import TARGET_STATION
 from src.night_route import plan, summary
 from src.transit import Network, load_transit, parse_time
-from src.ui import LED, NAVY, base_css, now_kst
+from src.ui import EASE, FONT, LED, base_css, now_kst
 
 MODE_COLOR = {"지하철": "#A3AE2A", "심야버스": "#5B8FD9", "택시": LED, "도보": "#B8C0CC"}
-NIGHT_BG = "#16213A"
+# 밤 화면 잉크 램프 (DESIGN.md 3-1)
+NIGHT_BG, NIGHT_CARD, NIGHT_LINE = "#0B0D14", "#11141C", "rgba(238,240,245,.08)"
+NIGHT_TEXT, NIGHT_SUB, NIGHT_MUTED = "#EEF0F5", "#A3A9B8", "#7A8296"
 
 NIGHT_CSS = f"""
 <style>
+:root {{ color-scheme: dark; }}
 [data-testid="stApp"], [data-testid="stHeader"] {{ background: {NIGHT_BG}; }}
-[data-testid="stMain"] p, [data-testid="stMain"] label, [data-testid="stMain"] h1,
-[data-testid="stMain"] h2, [data-testid="stMain"] h3, [data-testid="stMain"] li,
+[data-testid="stMain"] p, [data-testid="stMain"] label, [data-testid="stMain"] li,
 [data-testid="stMain"] [data-testid="stWidgetLabel"] p, [data-testid="stMain"] summary span,
-[data-testid="stMain"] [data-testid="stCaptionContainer"] {{ color: #E4E8F0; }}
-[data-testid="stMain"] [data-testid="stExpander"] details {{ border-color: #33405E; }}
-[data-testid="stMain"] [data-testid="stAlert"] p {{ color: {NAVY}; }}
+[data-testid="stMain"] [data-testid="stCaptionContainer"] {{ color: {NIGHT_TEXT}; }}
+[data-testid="stMain"] [data-testid="stCaptionContainer"] p {{ color: {NIGHT_SUB}; }}
+[data-testid="stMain"] [data-testid="stExpander"] details {{ border-color: {NIGHT_LINE}; background: {NIGHT_CARD}; }}
 [data-testid="stTopNav"] a, [data-testid="stTopNav"] p, [data-testid="stTopNav"] span,
-[data-testid="stTopNavSection"] {{ color: #DCE2EC !important; }}
-[data-testid="stMarkdownContainer"] p.night-title {{ font-family: SeoulNamsan, Pretendard, sans-serif; font-size: clamp(1.7rem, 7vw, 2.3rem);
-               color: #FFFFFF; margin: 0 0 .3rem; }}
-[data-testid="stMarkdownContainer"] p.night-sub {{ color: #AEB8CB !important; margin: 0 0 1.2rem; max-width: 34em; }}
+[data-testid="stTopNavSection"] {{ color: {NIGHT_SUB} !important; }}
+[data-testid="stMarkdownContainer"] h1.night-title {{ font-family: {FONT}; font-weight: 600;
+               font-size: clamp(28px, 7vw, 36px); letter-spacing: -0.02em; color: {NIGHT_TEXT};
+               margin: 0 0 8px; padding: 0; }}
+.night-title a {{ display: none; }}
+[data-testid="stMarkdownContainer"] p.night-sub {{ color: {NIGHT_SUB}; margin: 0 0 20px; max-width: 34em; }}
+[data-testid="stMarkdownContainer"] p.night-note {{ color: {NIGHT_SUB}; font-size: 13px; margin: 0 0 24px;
+               padding-left: 12px; border-left: 2px solid {LED}; }}
 
-/* 막차 안내 전광판 */
-.board {{ background: #000; border-radius: 8px; padding: 1rem 1.1rem 1.1rem; margin: 1.2rem 0 .9rem;
-         border: 2px solid #2C2C2C;
+/* 막차 안내 전광판 (빛나는 순간 2) */
+.board {{ background-color: #000; border-radius: 12px; padding: 16px 20px 20px; margin: 20px 0 16px;
+         border: 1px solid {NIGHT_LINE};
          background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.2px);
          background-size: 4px 4px; }}
-.board-head {{ color: {LED}; opacity: .75; font-size: .85rem; margin-bottom: .6rem; }}
-.board-row {{ display: grid; grid-template-columns: 4.2rem 1fr; gap: .6rem; color: {LED};
-             font-weight: 600; font-size: 1.08rem; line-height: 1.45; padding: .2rem 0;
-             font-variant-numeric: tabular-nums; text-shadow: 0 0 6px rgba(242,169,0,.45); }}
-.board-row .what small {{ display: block; font-weight: 400; opacity: .8; font-size: .85rem; }}
-[data-testid="stMarkdownContainer"] p.fare {{ font-family: SeoulNamsan, Pretendard, sans-serif; color: #fff; font-size: clamp(1.6rem, 7vw, 2.2rem);
-        margin: .2rem 0 .1rem; }}
-[data-testid="stMarkdownContainer"] p.fare-sub {{ color: #C9D1DF !important; margin: 0 0 1rem; }}
-[data-testid="stMarkdownContainer"] p.fare-sub b {{ color: {LED}; }}
+.board-head {{ color: {LED}; opacity: .8; font-size: 13px; margin-bottom: 12px; }}
+.board-row {{ display: grid; grid-template-columns: 64px 1fr; gap: 12px; color: {LED};
+             font-weight: 600; font-size: 17px; line-height: 1.45; padding: 4px 0; }}
+.board-row .what small {{ display: block; font-weight: 400; opacity: .85; font-size: 13px; }}
+[data-testid="stMarkdownContainer"] p.fare {{ font-family: {FONT}; font-weight: 600; color: {NIGHT_TEXT};
+        font-size: clamp(28px, 7vw, 36px); letter-spacing: -0.02em; margin: 4px 0 4px; }}
+[data-testid="stMarkdownContainer"] p.fare-sub {{ color: {NIGHT_SUB}; margin: 0 0 16px; }}
+[data-testid="stMarkdownContainer"] p.fare-sub b {{ color: {LED}; font-weight: 600; }}
 @media (prefers-reduced-motion: no-preference) {{
-  .board {{ animation: boardOn .5s ease-out; }}
+  .board {{ animation: boardOn 400ms {EASE}; }}
   @keyframes boardOn {{ from {{ opacity: .2; }} to {{ opacity: 1; }} }}
 }}
 </style>
 """
 
 
-@st.cache_resource(show_spinner="노선·시간표 불러오는 중...")
+@st.cache_resource(show_spinner="노선·시간표 불러오는 중…")
 def get_network(include_bus: bool):
     stations, timetable, state = load_transit(include_bus=include_bus)
     return Network(stations, timetable), state
@@ -59,7 +64,7 @@ def get_network(include_bus: bool):
 
 base_css()
 st.markdown(NIGHT_CSS, unsafe_allow_html=True)
-st.markdown('<p class="night-title">막차 놓쳤을 때</p>'
+st.markdown('<h1 class="night-title">막차 놓쳤을 때</h1>'
             '<p class="night-sub">지하철과 심야버스로 갈 수 있는 데까지 간 다음, 남은 거리만 택시를 타는 가장 싼 방법을 찾아요.</p>',
             unsafe_allow_html=True)
 
@@ -137,7 +142,7 @@ with answer:
     elif use_bus and state["bus"] == "없음":
         notes.append("심야버스 데이터가 없어서 지하철만 계산했어요.")
     if notes:
-        st.warning(" ".join(notes))
+        st.markdown(f'<p class="night-note">{html.escape(" ".join(notes))}</p>', unsafe_allow_html=True)
 
 # ---- 지도 ----
 with st.expander("지도로 보기"):

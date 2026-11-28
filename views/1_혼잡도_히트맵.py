@@ -3,14 +3,14 @@ import streamlit as st
 
 from src.analysis import METRICS, weekday_hour_matrix
 from src.config import WEEKDAY_KO, hour_label
-from src.ui import CONGESTION_SCALE, sidebar
+from src.ui import CONGESTION_SCALE, choice, sidebar
 
 df, station, year = sidebar()
 
 st.title("요일 × 시간대 히트맵")
 c1, c2 = st.columns(2)
-metric = c1.radio("지표", list(METRICS), format_func=METRICS.get, horizontal=True)
-period = c2.radio("기간", ["전체", "학기", "방학"], horizontal=True)
+metric = choice("지표", list(METRICS), format_func=METRICS.get, container=c1)
+period = choice("기간", ["전체", "학기", "방학"], container=c2)
 
 m = weekday_hour_matrix(df, station, metric, period=None if period == "전체" else period)
 m.index = [WEEKDAY_KO[i] for i in m.index]

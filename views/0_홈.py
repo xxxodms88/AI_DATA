@@ -5,7 +5,7 @@ import streamlit as st
 from src.analysis import hourly_profile
 from src.config import SEMESTERS, TARGET_STATION, WEEKDAY_KO, hour_label
 from src.recommend import recommend
-from src.ui import base_css, congestion_strip, get_data, level_of, now_kst, sample_note, station_sign
+from src.ui import base_css, choice, congestion_strip, get_data, level_of, now_kst, sample_note, station_sign
 
 base_css()
 df, is_sample = get_data()
@@ -25,9 +25,9 @@ with settings:
     md = (now.month, now.day)
     in_semester = any((s.month, s.day) <= md <= (e.month, e.day)
                       for periods in SEMESTERS.values() for s, e in periods)
-    period = c2.radio("기간", ["학기", "방학"], index=0 if in_semester else 1, horizontal=True)
-    mode = st.radio("어디로", ["학교 가는 길", "집 가는 길"], horizontal=True,
-                    index=0 if now.hour < 13 else 1)
+    period = choice("기간", ["학기", "방학"], default="학기" if in_semester else "방학", container=c2)
+    mode = choice("어디로", ["학교 가는 길", "집 가는 길"],
+                  default="학교 가는 길" if now.hour < 13 else "집 가는 길")
     if mode == "학교 가는 길":
         target = st.slider("이 시간대에 역에 도착하려고 해요", 6, 12, 8, format="%d시대")
     else:

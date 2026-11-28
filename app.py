@@ -20,3 +20,8 @@ pg = st.navigation({
     ],
 }, position="top")
 pg.run()
+
+# 화면 읽기 프로그램이 한국어로 읽도록 <html lang="ko"> 지정 (Streamlit 기본값은 en, DESIGN.md 7장)
+import streamlit.components.v1 as components  # noqa: E402
+
+components.html("<script>window.parent.document.documentElement.lang = 'ko';</script>", height=0)
