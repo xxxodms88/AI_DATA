@@ -22,6 +22,19 @@ streamlit run app.py
 - 글꼴(Paperlogy 페이퍼로지, SIL OFL 1.1)은 `static/fonts/`에 내장되어 있어 인터넷 글꼴 서버 없이도 보입니다.
 - 받아야 하는 데이터·API 키 목록: `docs/DATA_AND_API.md`
 
+## Claude Code에서 브라우저 쓰기 (Playwright MCP)
+
+저장소의 `.mcp.json`에 Playwright MCP가 설정되어 있어서, Claude Code가 앱을 브라우저로 열어 보고 화면을 점검할 수 있습니다.
+실행은 `scripts/playwright-mcp.mjs`가 맡고, `@playwright/mcp` 버전을 0.0.86으로 고정해 팀원 모두 같은 버전을 씁니다.
+
+- 처음 열 때 Claude Code가 이 서버를 써도 되는지 묻습니다. 허용하면 됩니다.
+- 클라우드 세션: 미리 설치된 Chromium(`/opt/pw-browsers/chromium`)을 그대로 씁니다.
+- 내 컴퓨터: Node.js가 필요하고, 처음 한 번 브라우저를 설치합니다.
+  ```bash
+  npx playwright install chromium
+  ```
+- 창을 띄워서 보고 싶으면 `PLAYWRIGHT_MCP_HEADED=1`을 설정하고 Claude Code를 실행합니다.
+
 ## 실제 데이터 넣기 (팀원 1)
 
 1. 원본 CSV를 `data/raw/`에 넣습니다. (용량이 커서 git에는 올리지 않습니다.)
