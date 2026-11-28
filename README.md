@@ -17,7 +17,8 @@ streamlit run app.py
 - **언제 탈까**(첫 화면): 역명판 → 혼잡 판정 한 문장 → 추천 → 05~24시 혼잡 막대. 휴대폰 우선.
 - **막차 놓쳤을 때**: 밤 화면(남색) + '막차 안내' 전광판 형태의 추천 경로.
 - **분석 근거**: 히트맵·피크·비교·역 유형 (발표용).
-- 디자인 기준: `docs/superpowers/specs/2026-11-26-ui-redesign-design.md`
+- **디자인 규칙: `DESIGN.md`** (화면을 고치기 전에 읽기, PR 전 체크리스트 포함)
+- 처음 디자인을 정한 기록: `docs/superpowers/specs/2026-11-26-ui-redesign-design.md`
 - 글꼴(서울남산체, Pretendard)은 `static/fonts/`에 내장되어 있어 인터넷 글꼴 서버 없이도 보입니다.
 - 받아야 하는 데이터·API 키 목록: `docs/DATA_AND_API.md`
 
